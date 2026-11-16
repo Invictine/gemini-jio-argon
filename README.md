@@ -64,7 +64,9 @@ The dialog POSTs to `POST http://127.0.0.1:<port>/v1/auth/session` with `Authori
 
 - **Verified (2xx):** the cookies are merged into this project's `.env` and applied to the running shared client immediately — no bridge restart. The provider is marked signed in and ready.
 - **Rejected (401/502):** nothing is saved locally and the current working sign-in is untouched; the dialog shows the bridge's error.
-- **Bridge unreachable:** the cookies are saved into T3's provider settings but are explicitly marked **unverified**; start the bridge and use **Verify & save** again to confirm. Until then the provider shows as unauthenticated.
+- **Bridge unreachable:** the cookies are saved into T3's provider settings but are explicitly marked **unverified**; start the bridge and use **Apply saved cookies** (shown next to *Update cookies*) to confirm them without re-pasting. Until then the provider shows as unauthenticated. A rejection on retry keeps the saved cookies and reports the error — it never silently overwrites a working sign-in.
+
+On a successful verification the bridge also reports, from the account's model registry discovered at init, whether **Argon** and **Hydrogen** are actually available to that Google account. T3 shows this as an advisory note in the sign-in result; the provider still lists both models statically (some accounts omit them and silently fall back to `gemini-3-flash`).
 
 Cookie values are never returned in a response, echoed in an error, or written to logs. Credentials are also rejected if they are empty, over 4096 characters, or contain line breaks, NUL, or `=`.
 
@@ -108,9 +110,13 @@ These env overrides are set **per provider instance** in T3's UI. If that env fi
 | --- | --- |
 | 403 / login page in bridge log | Cookies expired or DBSC — re-capture fresh values from Chrome (see cookie guide). |
 | Models fall back to `gemini-3-flash` | Account not entitled, or alias resolution failed — check the bridge log and re-apply the `config.py` patch. |
-| Tool-call parse failures | Retry, or use a simpler prompt; emulated tool calling is best-effort. |
+| Tool-call parse failures | Emulated calling is best-effort, but failures are no longer silent: the bridge returns a structured `__gemini_tool_error__` tool call (and rejects tool names not supplied in the request) so the agent loop can react. Retry, or use a simpler prompt. |
 | Model missing from picker | Add custom model slug `gemini-app/argon` / `gemini-app/hydrogen`. |
 | Port already in use | Change `GEMINI_API_PORT` in `.env` **and** the `baseURL` in both `config\opencode-gemini*.json*`. |
+
+## Limitations
+
+- **Local bridge only / remote browsers.** The sign-in dialog and the forced OpenCode config both target `http://127.0.0.1:<port>`, which is the loopback of the machine running them. This works for a local desktop T3 build and for a remote T3 server whose browser and bridge are on the same host. It does **not** work for a browser on a different machine from the bridge: the browser's `127.0.0.1` is not the T3 server host. T3 Code has no small, generic "proxy a local bridge" hook — adding one means wiring a new authenticated route through its Effect HTTP server and web RPC client, which is a large framework change. That was deliberately **not attempted**. Workarounds: run the bridge on the same host as the browser, or tunnel the bridge port (e.g. SSH `-L 8100:127.0.0.1:8100`) so loopback resolves to it.
 
 ## Maintenance
 
