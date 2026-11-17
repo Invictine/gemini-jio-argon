@@ -178,3 +178,23 @@ write with fabricated or empty content.
 
 See [the validation report](docs/reliability-report.md) for tested behavior and
 remaining live acceptance requirements.
+
+### Testing the installed Chrome extension
+
+With `GEMINI_BACKEND=chrome` and the bridge running:
+
+```powershell
+.\vendor\gemini-web-api\.venv\Scripts\python.exe scripts/smoke-extension.py --model all --mode full
+```
+
+This tests the running HTTP bridge, including answer correctness, streaming,
+tool-call emission, and a nonce passed through a harmless tool result. Formatting
+compliance is reported separately from arithmetic correctness. To ask the
+installed extension to open a dedicated worker tab, add `--open-worker`; Chrome
+must be running with the updated extension enabled. The command waits up to 90
+seconds for its alarm channel to open the tab.
+
+Generation requests activate the worker's Gemini tab and bring its Chrome window
+forward, restoring it if minimized. Keep that tab open during agent work.
+Authenticated `/v1/extension/diagnostics` reports the model, stage, visibility,
+and response structure without returning prompts, response text, or cookies.

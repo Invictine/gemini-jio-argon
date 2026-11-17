@@ -72,3 +72,28 @@ Native Windows browser control was unavailable, and the shared browser cannot
 open `chrome://extensions` or site settings. Automatic extension installation
 was therefore not completed. No original browser settings or saved cookies
 were changed. A working extension connection and live Argon reply remain required.
+
+## Installed-extension reliability work
+
+After the extension was loaded, the real HTTP bridge detected a capable worker
+and Hydrogen returned `42` for `17 + 25`. A later randomized plain Hydrogen
+check passed. Complete live acceptance has **not** passed: streaming and the
+tool-result round trip failed, and Argon did not finish a successful API check.
+The worker subsequently disconnected. A connection or passing local tests is
+not a claim that either model works end to end.
+
+Additional fixes now include a service-worker-owned WebSocket heartbeat,
+one-time reload delivery, content-script recovery after extension reloads,
+an active-connection probe instead of a stale DOM marker, and an authenticated
+command to open the fixed Gemini worker URL. Worker requests activate their
+tab/window. Response reading handles background Markdown with empty innerText,
+and fresh-chat setup waits for the old turn to clear and stops leftover
+generation before submitting another request.
+
+The repeatable HTTP suite is `scripts/smoke-extension.py`. Diagnostics are
+available at authenticated `/v1/extension/diagnostics`. Neither script prints
+credentials; the diagnostics return UI metadata rather than generated text.
+
+Local validation for this milestone: **96 Python tests, 24 Node worker tests,
+and 4 PowerShell black-box checks passed**. Live acceptance remains outstanding;
+the newer worker-opening recovery path is unit-tested but not yet live-verified.
