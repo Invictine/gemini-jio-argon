@@ -1,0 +1,3 @@
+[submodule "vendor/gemini-web-api"]
+	path = vendor/gemini-web-api
+	url = https://github.com/Invictine/gemini-jio-argon-bridge.git

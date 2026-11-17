@@ -1,0 +1,39 @@
+{
+  // OpenCode config schema (enables validation/autocomplete in editors).
+  "$schema": "https://opencode.ai/config.json",
+
+  // Default model selected when OpenCode starts. Slug form: <provider>/<model>.
+  "model": "gemini-app/argon",
+
+  "providers": {
+    "gemini-app": {
+      // Human-readable name shown in the provider / model pickers.
+      "name": "Gemini App",
+
+      // Generic OpenAI-compatible provider shipped with @opencode/ai. This lets
+      // OpenCode talk to our local bridge without a custom plugin.
+      "package": "@opencode/ai/providers/openai-compatible",
+
+      "settings": {
+        // Local bridge endpoint. Must match GEMINI_API_HOST / GEMINI_API_PORT
+        // in .env (defaults: 127.0.0.1:8100).
+        "baseURL": "http://127.0.0.1:8100/v1",
+
+        // Sent as `Authorization: Bearer <apiKey>` to the bridge.
+        // Must match GEMINI_API_KEY in .env (default: gemini-local).
+        "apiKey": "gemini-local"
+      },
+
+      "models": {
+        // Slugs map to the aliases patched into gemini_openai/config.py in the
+        // vendored bridge. These are the only two models we expose.
+        "argon": {
+          "name": "Gemini 4 Argon"
+        },
+        "hydrogen": {
+          "name": "Gemini 4 Hydrogen"
+        }
+      }
+    }
+  }
+}

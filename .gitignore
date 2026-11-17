@@ -1,0 +1,14 @@
+# Local secrets (cookies, tokens). .env.example is the safe committed template.
+.env
+.env.*
+!.env.example
+
+# Logs and transient runtime files
+*.log
+
+# Python environments and bytecode
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.env.tmp

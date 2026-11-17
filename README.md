@@ -28,7 +28,7 @@ The **native provider** is the supported path. It ships in the T3 Code fork's `f
 - **Python 3.12 + uv** — already installed and synced at `vendor\gemini-web-api\.venv`.
 - **T3 Code fork** with the native Gemini provider: the `feat/gemini-native-provider` branch, built and run locally (step 1). Its own README covers installing `vp` and `vp i`; building needs Node.js 22.16+/23.11+/24.10+.
 - **Native OpenCode executable** — the provider launches the native CLI with a forced config. The default path is pinned in the driver; override it with the **OpenCode executable** field in the Gemini provider settings.
-- **Chrome**, logged into <https://gemini.google.com> with an account whose model picker actually offers **Gemini 4 Argon / Hydrogen**. Entitlement matters — an unentitled account silently falls back to `gemini-3-flash`.
+- **Chrome**, logged into <https://gemini.google.com> with an account whose model picker actually offers **Gemini 4 Argon / Hydrogen**. Entitlement matters — an unentitled account receives an explicit model-unavailable error.
 
 ## Setup
 
@@ -66,7 +66,7 @@ The dialog POSTs to `POST http://127.0.0.1:<port>/v1/auth/session` with `Authori
 - **Rejected (401/502):** nothing is saved locally and the current working sign-in is untouched; the dialog shows the bridge's error.
 - **Bridge unreachable:** the cookies are saved into T3's provider settings but are explicitly marked **unverified**; start the bridge and use **Apply saved cookies** (shown next to *Update cookies*) to confirm them without re-pasting. Until then the provider shows as unauthenticated. A rejection on retry keeps the saved cookies and reports the error — it never silently overwrites a working sign-in.
 
-On a successful verification the bridge also reports, from the account's model registry discovered at init, whether **Argon** and **Hydrogen** are actually available to that Google account. T3 shows this as an advisory note in the sign-in result; the provider still lists both models statically (some accounts omit them and silently fall back to `gemini-3-flash`).
+On a successful verification the bridge also reports, from the account's model registry discovered at init, whether **Argon** and **Hydrogen** are actually available to that Google account. T3 shows this as an advisory note in the sign-in result; the provider still lists both models statically (accounts that omit either model receive an explicit model-unavailable error).
 
 Cookie values are never returned in a response, echoed in an error, or written to logs. Credentials are also rejected if they are empty, over 4096 characters, or contain line breaks, NUL, or `=`.
 
@@ -122,7 +122,8 @@ These env overrides are set **per provider instance** in T3's UI. If that env fi
 
 - **Update the vendored bridge:**
   ```powershell
-  git -C vendor\gemini-web-api pull
+  # This is a pinned patched fork. Review upstream updates before merging.
+  git -C vendor\gemini-web-api fetch origin
   git -C vendor\gemini-web-api rev-parse HEAD
   Push-Location vendor\gemini-web-api; uv sync; Pop-Location
   ```
@@ -143,4 +144,36 @@ These env overrides are set **per provider instance** in T3's UI. If that env fi
   - `gemini_openai\server.py` — loopback-on-bridge-port/T3 CORS middleware (no `null`), cookie validation (non-empty, <=4096, no CR/LF/NUL/`=`), the `.env` merge helper, and `POST /v1/auth/session` (verifies live before persisting; 401/502 on failure).
   - `gemini_openai\chrome_backend.py` — `/ws` accepts only a valid API key (query param) or a trusted loopback/T3/bundled-extension Origin.
   - Upstream versions may move these functions; after pulling, re-check that all three files still carry the patch before relying on T3 sign-in.
-- Google's **RPC IDs** change with web-app deploys. If requests start failing, the upstream bridge usually needs an update — pull frequently and check the upstream repo.
+- Google's **RPC IDs** change with web-app deploys. If requests start failing, the upstream bridge usually needs an update — fetch and review upstream updates before merging them into the patched fork.
+
+## Reliability checks
+
+Clone with `git clone --recurse-submodules` (both repositories are private). In an
+existing checkout, run `git submodule update --init --recursive`. The vendored
+bridge is pinned to the patched fork; do not replace it with unpatched upstream.
+
+```powershell
+uv sync --locked --group dev --project vendor/gemini-web-api
+Push-Location vendor/gemini-web-api
+.\.venv\Scripts\python.exe -m pytest -q
+Pop-Location
+.\vendor\gemini-web-api\.venv\Scripts\python.exe scripts/test-bridge-scripts.py
+.\vendor\gemini-web-api\.venv\Scripts\python.exe scripts/smoke-bridge.py --live
+```
+
+The first two suites run without Google credentials. The live smoke test loads
+this project's `.env`, verifies the session, and only tests entitled models. It
+checks plain generation, streaming, and tool-call emission; it does not execute
+a shell tool or establish T3 desktop acceptance. It exits nonzero on missing or
+rejected credentials, unavailable target models, or failed checks. It suppresses
+upstream logs and does not print cookies or generated content.
+
+Streaming upstream failures now use OpenAI error envelopes, so SDK clients raise
+instead of accepting an error message as a completed answer. Initialization is
+bounded and retryable auth/API failures get one fresh-client attempt. Streams
+are never replayed after output begins. Tool arguments with unresolved code
+placeholders or invalid shapes produce a visible tool error instead of a file
+write with fabricated or empty content.
+
+See [the validation report](docs/reliability-report.md) for tested behavior and
+remaining live acceptance requirements.
