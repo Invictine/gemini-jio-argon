@@ -2,6 +2,8 @@
 
 Only status and model availability are printed; upstream logs are captured so
 credentials, responses and account details cannot appear in the report.
+For each entitled model, live mode uses at most four generations: plain,
+streamed, tool request, and tool-result follow-up. Unavailable models use none.
 """
 import argparse
 import asyncio
@@ -10,6 +12,7 @@ import io
 import json
 import os
 from pathlib import Path
+import secrets
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -47,25 +50,113 @@ async def run(live):
         try:
             available = await srv.webapi_manager.verify_session(psid, psidts, timeout=15)
             report["account_models"] = available
+            if not any(available.values()):
+                report["live_status"] = "session verified; no advertised target models available"
+                return report
+            await srv.webapi_manager.apply_session(psid, psidts)
+            shared_client = await srv.webapi_manager.get()
+            from gemini_webapi.constants import AccountStatus
+            account_status = getattr(shared_client.account_status, "name", str(shared_client.account_status))
+            report["account_status"] = account_status
+            checks["account_available"] = shared_client.account_status == AccountStatus.AVAILABLE
+            if not checks["account_available"]:
+                report["live_status"] = "session verified; shared manager account unavailable"
+                return report
             report["live_status"] = "session verified"
         except Exception as exc:
-            report["live_status"] = f"session verification failed: {type(exc).__name__}"
+            report["live_status"] = f"session verification or manager initialization failed: {type(exc).__name__}"
             return report
         try:
             for alias, entitled in available.items():
                 if not entitled:
                     checks[f"{alias}_generation"] = "blocked: account does not offer model"
                     continue
-                body = {"model": alias, "messages": [{"role": "user", "content": "Reply with exactly BRIDGE_OK"}]}
+                resolved = shared_client.resolve_model(f"gemini-4-{alias}")
+                model_info = {
+                    "model_id": resolved.model_id,
+                    "model_name": resolved.model_name,
+                    "display_name": resolved.display_name,
+                    "is_available": bool(resolved.is_available),
+                }
+                report.setdefault("resolved_models", {})[alias] = model_info
+                checks[f"{alias}_resolved_available"] = model_info["is_available"]
+                if not model_info["is_available"]:
+                    checks[f"{alias}_generation"] = False
+                    checks[f"{alias}_stream"] = False
+                    checks[f"{alias}_tool_call"] = False
+                    checks[f"{alias}_tool_round_trip"] = False
+                    continue
+
+                body = {"model": f"gemini-4-{alias}", "messages": [{"role": "user", "content": "Reply with exactly BRIDGE_OK"}]}
                 r = await asyncio.wait_for(client.post("/v1/chat/completions", json=body), timeout=90)
-                checks[f"{alias}_generation"] = r.status_code == 200 and "BRIDGE_OK" in r.text
+                try:
+                    payload = r.json()
+                    plain = payload["choices"][0]["message"].get("content") or ""
+                except (ValueError, KeyError, IndexError, TypeError):
+                    plain = ""
+                checks[f"{alias}_generation"] = r.status_code == 200 and "BRIDGE_OK" in plain
+
                 body["stream"] = True
                 r = await asyncio.wait_for(client.post("/v1/chat/completions", json=body), timeout=90)
-                checks[f"{alias}_stream"] = r.status_code == 200 and '"error"' not in r.text and "[DONE]" in r.text
-                body.update(stream=False, tool_choice="required", tools=[{"type": "function", "function": {
-                    "name": "get_status", "parameters": {"type": "object", "properties": {}}}}])
+                stream_text = []
+                stream_error = False
+                done = False
+                if r.status_code == 200:
+                    for line in r.text.splitlines():
+                        if not line.startswith("data:"):
+                            continue
+                        data = line[5:].strip()
+                        if data == "[DONE]":
+                            done = True
+                            continue
+                        try:
+                            event = json.loads(data)
+                        except ValueError:
+                            continue
+                        if "error" in event:
+                            stream_error = True
+                        for choice in event.get("choices", []):
+                            delta = choice.get("delta", {}).get("content")
+                            if isinstance(delta, str):
+                                stream_text.append(delta)
+                checks[f"{alias}_stream"] = r.status_code == 200 and done and not stream_error and "BRIDGE_OK" in "".join(stream_text)
+
+                nonce = secrets.token_hex(12)
+                body.update(stream=False, messages=[{"role": "user", "content":
+                    "Call the get_status tool to retrieve the current status. After receiving its result, "
+                    "return the nonce from that result verbatim as your entire final answer."}],
+                    tool_choice="required", tools=[{"type": "function", "function": {
+                        "name": "get_status", "description": "Return a generated status nonce.",
+                        "parameters": {"type": "object", "properties": {}}}}])
                 r = await asyncio.wait_for(client.post("/v1/chat/completions", json=body), timeout=90)
-                checks[f"{alias}_tool_call"] = r.status_code == 200 and '"name":"get_status"' in r.text.replace(" ", "")
+                tool_call = None
+                if r.status_code == 200:
+                    try:
+                        first = r.json()["choices"][0]["message"].get("tool_calls", [])
+                        tool_call = next((tc for tc in first if tc.get("function", {}).get("name") == "get_status"), None)
+                    except (ValueError, KeyError, IndexError, TypeError):
+                        pass
+                checks[f"{alias}_tool_call"] = tool_call is not None
+                if tool_call is None:
+                    checks[f"{alias}_tool_round_trip"] = False
+                    continue
+
+                followup = {
+                    "model": body["model"],
+                    "messages": [
+                        *body["messages"],
+                        {"role": "assistant", "content": None, "tool_calls": [tool_call]},
+                        {"role": "tool", "tool_call_id": tool_call.get("id"), "name": "get_status", "content": f"nonce: {nonce}"},
+                    ],
+                }
+                r = await asyncio.wait_for(client.post("/v1/chat/completions", json=followup), timeout=90)
+                answer = ""
+                if r.status_code == 200:
+                    try:
+                        answer = r.json()["choices"][0]["message"].get("content") or ""
+                    except (ValueError, KeyError, IndexError, TypeError):
+                        pass
+                checks[f"{alias}_tool_round_trip"] = r.status_code == 200 and nonce in answer
         finally:
             await srv.webapi_manager.reset()
     return report

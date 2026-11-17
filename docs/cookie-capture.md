@@ -28,6 +28,15 @@ If copied cookies keep getting rejected, the vendored bridge includes a **Chrome
 
 - Folder: `vendor\gemini-web-api\extension`
 - Load it in Chrome via `chrome://extensions` → enable **Developer mode** → **Load unpacked** → select that folder.
-- Follow any README inside that folder, then set `GEMINI_BACKEND=extension` in `.env` (instead of `webapi`) and restart the bridge.
+- Follow any README inside that folder, then set `GEMINI_BACKEND=chrome` in `.env` (instead of `webapi`) and restart the bridge.
 
 This keeps the session inside Chrome and avoids many DBSC / cookie-copy failures, but still requires a logged-in Google account with the target models available.
+
+Reload the updated extension after pulling changes. Argon/Hydrogen requests now
+require its model-selection capability; older workers are rejected rather than
+silently using the tab's previous model. The extension selects the exact model
+in Gemini's picker before sending each request.
+
+The extension service worker connects to localhost with its host permission.
+A script injected directly into Gemini's page is subject to Chrome's Local
+Network Access permission and cannot connect if that site permission is denied.

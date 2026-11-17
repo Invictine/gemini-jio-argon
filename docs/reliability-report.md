@@ -39,3 +39,36 @@ execution, long-lived cookie refresh/DBSC behavior, quota endurance, or true
 upstream model identity. The model registry is Google's reported availability;
 the bridge cannot independently prove which model Google runs internally.
 CI was configured; its hosted outcome is separate from local test results.
+
+## Follow-up: signed-in browser acceptance
+
+The shared browser's signed-in Gemini account offers both `4 Hydrogen` and
+`4 Argon` in its actual mode picker. This is distinct from the rejected saved
+two-cookie session. The saved session initializes as `UNAUTHENTICATED` and
+discovers only `gemini-flash-lite` / `Quick answers`.
+
+Using the worker's actual DOM-driving functions in that browser:
+
+- Hydrogen returned `HYDROGEN_BRIDGE_OK_7429`, and a second request returned
+  `18` for `7 + 11`. Both responses also contained follow-up suggestions.
+- Argon was selected and simple prompts submitted, but no new response was
+  rendered within the worker's initial response window. The UI remained on
+  `Stop response`. Argon generation is **not verified**.
+- Chrome reports Gemini's `local-network-access` permission as `denied`.
+  An authenticated page WebSocket to the diagnostic bridge failed before
+  reaching the server. The live DOM checks used a test event sink, not a
+  working browser-to-bridge socket; these are not end-to-end T3 acceptance.
+
+Live testing found and fixed ignored model hints, a mode-picker SPA timing
+race, and previous-chat text being emitted as a new response. Updated workers
+advertise model-selection support; the bridge rejects targeted requests from
+older workers. Scraping excludes prior response nodes, waits for generation
+to finish, and gives Argon up to 120 seconds for its first response within a
+290-second overall scrape deadline. Eight Node regression tests cover those
+worker behaviors, in addition to the 90 passing Python tests.
+
+The installed signed-in Chrome profiles did not have the bridge extension.
+Native Windows browser control was unavailable, and the shared browser cannot
+open `chrome://extensions` or site settings. Automatic extension installation
+was therefore not completed. No original browser settings or saved cookies
+were changed. A working extension connection and live Argon reply remain required.

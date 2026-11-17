@@ -163,8 +163,9 @@ Pop-Location
 
 The first two suites run without Google credentials. The live smoke test loads
 this project's `.env`, verifies the session, and only tests entitled models. It
-checks plain generation, streaming, and tool-call emission; it does not execute
-a shell tool or establish T3 desktop acceptance. It exits nonzero on missing or
+checks plain generation, streamed answer content, and a tool-result round trip
+using a fresh nonce. It does not execute a shell tool or establish T3 desktop
+acceptance. It exits nonzero on missing or
 rejected credentials, unavailable target models, or failed checks. It suppresses
 upstream logs and does not print cookies or generated content.
 
