@@ -26,7 +26,7 @@ repeatable live passes.
 
 - 100 Python tests passed, including a loopback chat request that waits for
   recovery and completes when a test extension connects.
-- 31 extension Node tests passed, including background-only tab creation,
+- 32 extension Node tests passed, including background-only tab creation,
   heartbeat/reload recovery, model selection, fresh-chat isolation, multiline
   prompt insertion, hidden Markdown/code extraction, and tool-result handling.
 - 4 PowerShell bridge black-box checks passed.
@@ -59,8 +59,8 @@ longevity, or end-to-end T3 desktop use.
   hidden tab can remain connected without foreground UI control.
 - A normal chat request in forced Chrome mode queues a missing worker. Calls
   share the recovery window and stop waiting after 85 seconds.
-- Stable response text is measured by elapsed time to account for slower hidden
-  tab timers. A timed-out chat does not send the prompt again.
+- The service worker runs short UI waits for hidden tabs, and response stability
+  is measured by elapsed time. A timed-out chat does not send the prompt again.
 
 ## Live limitations
 

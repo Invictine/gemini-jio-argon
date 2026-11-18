@@ -220,16 +220,25 @@ def run(models: list[str], mode: str, open_worker: bool = False, require_backgro
     # policy configured, so each generation is attempted exactly once.
     with httpx.Client(timeout=REQUEST_TIMEOUT_SECONDS) as client:
         if open_worker:
+            status = client.get(f"{base}/v1/status", headers=headers, timeout=5)
+            status.raise_for_status()
+            existing = {tab["tabId"] for tab in status.json().get("tabs", [])}
             queued = client.post(f"{base}/v1/extension/open-worker", headers=headers, timeout=5)
             emit("bridge:open_worker_queued", queued.status_code == 200, status=queued.status_code)
             if queued.status_code != 200:
                 return 1
             deadline = time.monotonic() + 90
             while time.monotonic() < deadline:
-                candidate = client.get(f"{base}/health", headers=headers, timeout=5)
-                if candidate.status_code == 200 and candidate.json().get("extension_connected") is True:
+                candidate = client.get(f"{base}/v1/status", headers=headers, timeout=5)
+                if candidate.status_code == 200 and any(
+                    tab.get("eligible") is True and tab.get("tabId") not in existing
+                    for tab in candidate.json().get("tabs", [])
+                ):
                     break
                 time.sleep(2)
+            else:
+                emit("bridge:new_worker", False, error="worker_did_not_connect")
+                return 1
         try:
             health = client.get(f"{base}/health", headers=headers)
         except httpx.HTTPError as exc:
