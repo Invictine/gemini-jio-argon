@@ -1,5 +1,7 @@
 # start-bridge.ps1 -- launch the local Gemini OpenAI-compatible bridge.
 # Never prints secret values; only reads them into process environment.
+param([switch]$Background)
+
 $ErrorActionPreference = 'Stop'
 
 $ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
@@ -37,7 +39,7 @@ if (-not $env:GEMINI_API_PORT) { $env:GEMINI_API_PORT = '8100' }
 if (-not $env:GEMINI_API_KEY)  { $env:GEMINI_API_KEY  = 'gemini-local' }
 if (-not $env:GEMINI_BACKEND)  { $env:GEMINI_BACKEND  = 'webapi' }
 
-if (-not $env:GEMINI_1PSID) {
+if ($env:GEMINI_BACKEND -ne 'chrome' -and -not $env:GEMINI_1PSID) {
     Write-Warning 'GEMINI_1PSID is empty. Copy .env.example -> .env and paste your cookies (see docs/cookie-capture.md); the bridge will fail to authenticate otherwise. Launching anyway so you can see the error.'
 }
 
@@ -47,6 +49,38 @@ if (-not (Test-Path -LiteralPath $PythonExe)) {
 
 Write-Host "Starting Gemini bridge at http://$($env:GEMINI_API_HOST):$($env:GEMINI_API_PORT)/v1"
 Write-Host "Working directory: $BridgeDir"
+
+if ($Background) {
+    try {
+        $ExistingHealth = Invoke-RestMethod -Uri "http://$($env:GEMINI_API_HOST):$($env:GEMINI_API_PORT)/health" -TimeoutSec 1
+    } catch { $ExistingHealth = $null }
+    if ($ExistingHealth.status -eq 'ok') {
+        Write-Host 'Bridge is already healthy; keeping the existing process.'
+        exit 0
+    }
+    $StdoutLog = Join-Path $ProjectRoot 'bridge-detached.log'
+    $StderrLog = Join-Path $ProjectRoot 'bridge-detached-error.log'
+    $BridgeProcess = Start-Process -FilePath $PythonExe -ArgumentList @(
+        '-m', 'uvicorn', 'gemini_openai.server:app',
+        '--host', $env:GEMINI_API_HOST, '--port', $env:GEMINI_API_PORT
+    ) -WorkingDirectory $BridgeDir -WindowStyle Hidden -PassThru `
+        -RedirectStandardOutput $StdoutLog -RedirectStandardError $StderrLog
+    $Ready = $false
+    for ($Attempt = 0; $Attempt -lt 40; $Attempt++) {
+        $BridgeProcess.Refresh()
+        if ($BridgeProcess.HasExited) { break }
+        try {
+            $Health = Invoke-RestMethod -Uri "http://$($env:GEMINI_API_HOST):$($env:GEMINI_API_PORT)/health" -TimeoutSec 1
+            if ($Health.status -eq 'ok') { $Ready = $true; break }
+        } catch { }
+        Start-Sleep -Milliseconds 250
+    }
+    if (-not $Ready) {
+        throw "Background bridge did not become healthy. See '$StderrLog'."
+    }
+    Write-Host "Background bridge ready (PID $($BridgeProcess.Id)). Logs: $StdoutLog"
+    exit 0
+}
 
 Push-Location $BridgeDir
 $BridgeExitCode = 0

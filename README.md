@@ -11,10 +11,12 @@ T3 Code fork (branch feat/gemini-native-provider, native "Gemini" provider)
   -> GeminiDriver -> native OpenCode executable
       -> OpenCode "gemini-app" provider  (config forced via env vars)
           -> local bridge  http://127.0.0.1:8100/v1  (vendor/gemini-web-api)
-              -> gemini.google.com  (your Chrome cookies)
+              -> signed-in Gemini tab (Chrome backend) or saved session (cookie backend)
 ```
 
-The **native provider** is the supported path. It ships in the T3 Code fork's `feat/gemini-native-provider` branch and shows up directly as **Gemini** under Settings → Providers. Its Sign in dialog POSTs your cookies to the bridge, which **verifies them live against Google** before saving or applying them. The forced OpenCode config (`OPENCODE_CONFIG_CONTENT`) means the agent can only ever talk to the local bridge. The bridge maps `argon`/`hydrogen` to the internal Gemini 4 model IDs and emulates tool calling. The older **Local ACP command** setup is still available as a fallback (see the end of Setup).
+For the signed-in Chrome route, load the unpacked `vendor/gemini-web-api/extension` in the Chrome profile that offers Argon and Hydrogen, set `GEMINI_BACKEND=chrome` in the project `.env`, and start the bridge in the background. The extension uses an inactive Gemini tab. The [installed-extension check](#testing-the-installed-chrome-extension) can open that tab for you and verify generation through the local API.
+
+The T3 Code fork's `feat/gemini-native-provider` branch adds **Gemini** under Settings → Providers. Its Sign in dialog verifies saved cookies for the cookie backend. That setup is documented below. The [validation report](docs/reliability-report.md) tracks live Chrome and T3 results separately.
 
 ## ⚠️ Read this first
 
@@ -47,11 +49,11 @@ Keep that T3 build running — it is the app you will configure below. The fork'
 ### 2. Start and verify the bridge
 
 ```powershell
-.\scripts\start-bridge.ps1      # starts uvicorn on 127.0.0.1:8100 (leave running)
+.\scripts\start-bridge.ps1 -Background # hidden process, logs in bridge-detached*.log
 .\scripts\check-bridge.ps1      # second terminal: health + model list
 ```
 
-`check-bridge.ps1` should print **Bridge reachable: YES** and list `gemini-4-argon` and `gemini-4-hydrogen`. Keep the bridge terminal open while using T3 — sign-in needs it.
+`check-bridge.ps1` should print **Bridge reachable: YES** and list `gemini-4-argon` and `gemini-4-hydrogen`. Background launch returns after the health endpoint is ready and leaves no visible terminal. Omit `-Background` to run it in the terminal for debugging. Model advertisement alone does not verify generation.
 
 ### 3. Add the Gemini provider and sign in
 
@@ -161,7 +163,8 @@ Pop-Location
 .\vendor\gemini-web-api\.venv\Scripts\python.exe scripts/smoke-bridge.py --live
 ```
 
-The first two suites run without Google credentials. The live smoke test loads
+The first two suites run without Google credentials. `smoke-bridge.py --live`
+tests the cookie backend, independently of the installed Chrome extension. It loads
 this project's `.env`, verifies the session, and only tests entitled models. It
 checks plain generation, streamed answer content, and a tool-result round trip
 using a fresh nonce. It does not execute a shell tool or establish T3 desktop
@@ -184,17 +187,21 @@ remaining live acceptance requirements.
 With `GEMINI_BACKEND=chrome` and the bridge running:
 
 ```powershell
-.\vendor\gemini-web-api\.venv\Scripts\python.exe scripts/smoke-extension.py --model all --mode full
+.\vendor\gemini-web-api\.venv\Scripts\python.exe scripts/smoke-extension.py --model all --mode full --require-background
 ```
 
-This tests the running HTTP bridge, including answer correctness, streaming,
-tool-call emission, and a nonce passed through a harmless tool result. Formatting
-compliance is reported separately from arithmetic correctness. To ask the
+This tests the running HTTP bridge, including fresh response markers, streaming,
+tool-call emission, and a nonce passed through a harmless tool result. Exact
+output formatting is reported separately from marker delivery. To ask the
 installed extension to open a dedicated worker tab, add `--open-worker`; Chrome
 must be running with the updated extension enabled. The command waits up to 90
 seconds for its alarm channel to open the tab.
 
-Generation requests activate the worker's Gemini tab and bring its Chrome window
-forward, restoring it if minimized. Keep that tab open during agent work.
+Generation requests run in the existing background worker tab without activating
+it or changing the focused window. With `GEMINI_BACKEND=chrome`, a chat request
+can also recover a missing worker on its own. It waits up to 85 seconds for the
+extension to open and connect an inactive Gemini tab. Keep Chrome running with
+the extension enabled. The background check requires a hidden, unfocused worker
+before and after the test.
 Authenticated `/v1/extension/diagnostics` reports the model, stage, visibility,
 and response structure without returning prompts, response text, or cookies.

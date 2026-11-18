@@ -12,7 +12,6 @@ import json
 import os
 from pathlib import Path
 import secrets
-import re
 import sys
 import time
 from typing import Any
@@ -62,46 +61,59 @@ def choice_content(response: httpx.Response) -> str:
     return payload["choices"][0]["message"].get("content") or ""
 
 
-def arithmetic_matches(answer: str, expected: str) -> bool:
-    lines = answer.strip().splitlines()
-    if not lines:
-        return False
-    first = lines[0].strip().strip("`* ")
-    return bool(re.fullmatch(r"\d+(?:,\d{3})*", first)) and first.replace(",", "") == expected
+def http_failure(response: httpx.Response) -> str:
+    # Map known safe errors without logging upstream response bodies.
+    try:
+        detail = json_response(response).get("detail", "")
+    except ValueError:
+        return "http_error"
+    if not isinstance(detail, str):
+        return "http_error"
+    if detail.startswith("Gemini could not fulfill this request with the selected model"):
+        return "model_request_failed"
+    if detail.startswith("no eligible gemini tab") or (
+        detail.startswith("gemini tab ") and detail.endswith(" disconnected")
+    ):
+        return "worker_disconnected"
+    if detail.startswith(("fresh chat did not become ready", "new-chat control not found")):
+        return "fresh_chat_unavailable"
+    if detail.startswith("composer did not accept the complete prompt"):
+        return "prompt_incomplete"
+    if detail.startswith(("no new response appeared", "Gemini response did not stabilize", "Gemini generation remained active")):
+        return "response_timeout"
+    return "http_error"
 
 
 def run_plain(client: httpx.Client, base: str, headers: dict[str, str], model: str) -> bool:
-    a, b = secrets.randbelow(800_000) + 100_000, secrets.randbelow(800_000) + 100_000
-    expected = str(a + b)
+    expected = "BRIDGE_PLAIN_" + secrets.token_hex(12)
     response = client.post(f"{base}/v1/chat/completions", headers=headers, json={
         "model": model,
-        "messages": [{"role": "user", "content": f"Calculate {a} + {b}. Reply with only the integer."}],
+        "messages": [{"role": "user", "content": "Bridge response transmission test.\nDo not run code, use tools, search or browse.\nReply with exactly: " + expected}],
     })
     if response.status_code != 200:
-        emit(f"{model}:plain", False, status=response.status_code, error="http_error")
+        emit(f"{model}:plain", False, status=response.status_code, error=http_failure(response))
         return False
     try:
         answer = choice_content(response).strip()
     except (ValueError, KeyError, IndexError, TypeError):
         emit(f"{model}:plain", False, status=response.status_code, error="invalid_response")
         return False
-    passed = arithmetic_matches(answer, expected)
+    passed = expected in answer
     emit(f"{model}:plain", passed, status=response.status_code,
-         error=None if passed else "arithmetic_mismatch",
+         error=None if passed else "fresh_marker_missing",
          detail=f"exact_format={answer == expected}")
     return passed
 
 
 def run_stream(client: httpx.Client, base: str, headers: dict[str, str], model: str) -> bool:
-    a, b = secrets.randbelow(800_000) + 100_000, secrets.randbelow(800_000) + 100_000
-    expected = str(a + b)
+    expected = "BRIDGE_STREAM_" + secrets.token_hex(12)
     response = client.post(f"{base}/v1/chat/completions", headers=headers, json={
         "model": model,
         "stream": True,
-        "messages": [{"role": "user", "content": f"Calculate {a} + {b}. Reply with only the integer."}],
+        "messages": [{"role": "user", "content": "Bridge streaming transmission test.\nDo not run code, use tools, search or browse.\nReply with exactly: " + expected}],
     })
     if response.status_code != 200:
-        emit(f"{model}:stream", False, status=response.status_code, error="http_error")
+        emit(f"{model}:stream", False, status=response.status_code, error=http_failure(response))
         return False
     pieces: list[str] = []
     done = False
@@ -128,7 +140,7 @@ def run_stream(client: httpx.Client, base: str, headers: dict[str, str], model: 
         emit(f"{model}:stream", False, status=response.status_code, error="invalid_sse")
         return False
     answer = "".join(pieces).strip()
-    passed = done and not error_event and arithmetic_matches(answer, expected)
+    passed = done and not error_event and expected in answer
     emit(f"{model}:stream", passed, status=response.status_code,
          error=None if passed else "stream_answer_mismatch",
          detail=f"exact_format={answer == expected}")
@@ -149,7 +161,7 @@ def run_tool_round_trip(client: httpx.Client, base: str, headers: dict[str, str]
         "model": model, "messages": messages, "tool_choice": "required", "tools": tool_spec,
     })
     if first.status_code != 200:
-        emit(f"{model}:tool_call", False, status=first.status_code, error="http_error")
+        emit(f"{model}:tool_call", False, status=first.status_code, error=http_failure(first))
         emit(f"{model}:tool_round_trip", False, error="tool_call_unavailable")
         return False
     try:
@@ -174,7 +186,7 @@ def run_tool_round_trip(client: httpx.Client, base: str, headers: dict[str, str]
         "model": model, "messages": messages,
     })
     if final.status_code != 200:
-        emit(f"{model}:tool_round_trip", False, status=final.status_code, error="http_error")
+        emit(f"{model}:tool_round_trip", False, status=final.status_code, error=http_failure(final))
         return False
     try:
         answer = choice_content(final)
@@ -187,7 +199,16 @@ def run_tool_round_trip(client: httpx.Client, base: str, headers: dict[str, str]
     return passed
 
 
-def run(models: list[str], mode: str, open_worker: bool = False) -> int:
+def background_check(client: httpx.Client, base: str, headers: dict[str, str], phase: str) -> bool:
+    response = client.get(f"{base}/v1/extension/diagnostics", headers=headers, timeout=8)
+    worker = response.json().get("worker", {}) if response.status_code == 200 else {}
+    passed = worker.get("visibility") == "hidden" and worker.get("focused") is False
+    emit(f"bridge:background_{phase}", passed, status=response.status_code,
+         detail=f"visibility={worker.get('visibility')} focused={worker.get('focused')}")
+    return passed
+
+
+def run(models: list[str], mode: str, open_worker: bool = False, require_background: bool = False) -> int:
     env = load_project_env()
     host = env.get("GEMINI_API_HOST") or os.environ.get("GEMINI_API_HOST") or "127.0.0.1"
     port = env.get("GEMINI_API_PORT") or os.environ.get("GEMINI_API_PORT") or "8100"
@@ -249,6 +270,8 @@ def run(models: list[str], mode: str, open_worker: bool = False) -> int:
         except (httpx.HTTPError, ValueError, TypeError) as exc:
             emit("bridge:eligible_tab", True, error=type(exc).__name__, detail="optional_status_unavailable")
 
+        if require_background and not background_check(client, base, headers, "before"):
+            return 1
         failures = 0
         for model in models:
             model_id = f"gemini-4-{model}"
@@ -257,6 +280,8 @@ def run(models: list[str], mode: str, open_worker: bool = False) -> int:
                 checks.append(run_stream(client, base, headers, model_id))
                 checks.append(run_tool_round_trip(client, base, headers, model_id))
             failures += sum(not passed for passed in checks)
+        if require_background and not background_check(client, base, headers, "after"):
+            failures += 1
     emit("summary", failures == 0, detail=f"models={len(models)} mode={mode} failures={failures}")
     return 1 if failures else 0
 
@@ -266,10 +291,11 @@ def main() -> int:
     parser.add_argument("--model", choices=("argon", "hydrogen", "all"), default="all")
     parser.add_argument("--mode", choices=("plain", "full"), default="full")
     parser.add_argument("--open-worker", action="store_true", help="Ask the installed extension to open a dedicated Gemini tab; wait up to 90 seconds")
+    parser.add_argument("--require-background", action="store_true", help="Require a hidden, unfocused Gemini tab before and after live checks")
     args = parser.parse_args()
     models = [args.model] if args.model != "all" else ["argon", "hydrogen"]
     try:
-        return run(models, args.mode, args.open_worker)
+        return run(models, args.mode, args.open_worker, args.require_background)
     except httpx.HTTPError as exc:
         emit("smoke", False, error=type(exc).__name__)
         return 1

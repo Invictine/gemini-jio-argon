@@ -1,99 +1,93 @@
-# Reliability validation — 17 November 2026
+# Reliability validation
 
-## Verified locally
+This report separates code-level reliability from live Google model behavior.
 
-- Bridge regression suite: **90 passed**, including a real loopback HTTP/WebSocket fake-extension integration, auth/CORS validation, session persistence, initialization failure/retry, stale-client reset protection, tool parsing and tool-result round trip.
-- OpenAI SDK streaming failure test confirms an upstream error raises `APIError`, rather than becoming a successful assistant answer.
-- PowerShell health-check black-box suite: **4 passed** (unreachable server, rejected key, missing target model, successful model advertisement).
-- In-process HTTP smoke test: health and authenticated model catalogue passed. This does not prove Google authentication.
-- `uv sync --locked --group dev` succeeded; bridge and project diffs passed whitespace checks.
+## Current result
 
-## Live result
+The extension now operates in the background. Requests use the existing Gemini
+worker without activating its tab or window, and recovery opens new worker tabs
+with `active: false`. The installed worker was live-verified after recovery;
+diagnostics showed it hidden and unfocused before and after requests.
 
-The smoke test loaded the saved project credentials and attempted a bounded,
-non-generating Google session verification. Google rejected the session with
-`AuthError`. No saved credentials were changed. Live generation, model entitlement,
-streaming and model-generated tools could therefore not be verified.
+Live model reliability is still intermittent. A full Hydrogen run on 17
+November passed plain generation, SSE streaming, a required `get_status` tool
+call, and a fresh nonce tool-result round trip while the worker remained
+hidden. A fresh recheck on 18 November returned HTTP 502 for both Argon and
+Hydrogen. Argon has also returned Google's exact “I'm having a hard time
+fulfilling your request.” response; the bridge surfaces that as an error rather
+than silently falling back. A subsequent Hydrogen request returned the expected
+marker after the hidden bridge restart and inactive worker recovery. In the
+same check, Argon was selected and the worker timed out waiting for a new reply.
+Both model paths still need repeatable live passes.
 
-Refresh the cookies through T3's Gemini sign-in or the documented cookie-capture
-flow, then run `scripts/smoke-bridge.py --live` with the bridge venv Python.
-The smoke test sends up to three short generations per available model.
+## Local verification
 
-## Changes
+- 99 Python tests passed, including a loopback chat request that waits for
+  recovery and completes when a test extension connects.
+- 31 extension Node tests passed, including background-only tab creation,
+  heartbeat/reload recovery, model selection, fresh-chat isolation, multiline
+  prompt insertion, hidden Markdown/code extraction, and tool-result handling.
+- 4 PowerShell bridge black-box checks passed.
+- OpenAI error-envelope behavior was verified: upstream failures become client
+  errors rather than successful assistant text.
+- The vendored bridge is pinned as a submodule to the patched private fork, and
+  its offline CI workflow is configured.
 
-- Initialization failures enter the one-retry path; failed clients are closed and initialization has a whole-operation deadline.
-- A request resetting its failed client cannot tear down a newer client's session.
-- Unavailable Argon/Hydrogen requests fail explicitly instead of serving the account default under the requested model name.
-- Tool parser handles quoted brackets and nested objects; invalid argument shapes and unresolved code placeholders become structured errors.
-- Required-tool requests cannot silently finish as ordinary prose when the model omits the call.
-- Stream failures are structured OpenAI errors. Authentication rejection responses do not interpolate upstream exception text.
-- Cookie validation rejects non-string values and CR/LF before trimming.
-- Launcher pins the credential persistence path and propagates process failure; health checks respect configured connection settings and return failure for rejected authentication or missing models.
-- New configuration template leaves Chrome in charge of refreshing shared cookies. Existing `.env` settings were preserved.
-- Patched bridge source is pinned as a submodule in a private fork, with an offline regression CI workflow.
+These tests do not prove live entitlement, quota, model identity, cookie
+longevity, or end-to-end T3 desktop use.
 
-## Acceptance still required
+## Important fixes
 
-These tests do not establish working signed-in T3 desktop use, real shell-tool
-execution, long-lived cookie refresh/DBSC behavior, quota endurance, or true
-upstream model identity. The model registry is Google's reported availability;
-the bridge cannot independently prove which model Google runs internally.
-CI was configured; its hosted outcome is separate from local test results.
+- Argon/Hydrogen requests fail explicitly when unavailable; the account default
+  is never presented under the requested model name.
+- Initialization has a bounded retry path with failed-client cleanup and
+  protection against an old request resetting a newer client.
+- Stream failures, missing required tools, invalid tool arguments, and
+  unresolved file placeholders return structured errors.
+- Cookie input is validated before use and authentication exceptions are not
+  echoed back to callers.
+- The launcher pins the project `.env` path, propagates bridge exit status, and
+  can start a hidden process with `-Background`. Hidden startup and a second
+  invocation reusing the healthy process were verified locally.
+- Multiline prompts use a verified synthetic paste path; truncated first-line
+  submissions are rejected. Fresh-chat setup waits for the prior turn to clear,
+  and response scraping excludes stale nodes while preserving hidden Markdown
+  and code blocks.
+- The service worker owns the WebSocket heartbeat and recovery polling, so a
+  hidden tab can remain connected without foreground UI control.
+- A normal chat request in forced Chrome mode queues a missing worker. Calls
+  share the recovery window and stop waiting after 85 seconds.
 
-## Follow-up: signed-in browser acceptance
+## Live limitations
 
-The shared browser's signed-in Gemini account offers both `4 Hydrogen` and
-`4 Argon` in its actual mode picker. This is distinct from the rejected saved
-two-cookie session. The saved session initializes as `UNAUTHENTICATED` and
-discovers only `gemini-flash-lite` / `Quick answers`.
+The saved two-cookie session initializes as unauthenticated and discovers only
+`gemini-flash-lite`; the signed-in Chrome account's picker offers both `4 Argon`
+and `4 Hydrogen`. This is why the current Chrome backend is used for live
+checks, rather than treating the cookie-only backend as proof of access.
 
-Using the worker's actual DOM-driving functions in that browser:
+The native OpenCode CLI directory-list acceptance fixture timed out after 240
+seconds and was terminated without an orphan process. T3 desktop sign-in and
+tool execution remain unverified. Long-duration endurance, browser
+restart/minimize recovery, and quota/rate-limit behavior are also unverified.
 
-- Hydrogen returned `HYDROGEN_BRIDGE_OK_7429`, and a second request returned
-  `18` for `7 + 11`. Both responses also contained follow-up suggestions.
-- Argon was selected and simple prompts submitted, but no new response was
-  rendered within the worker's initial response window. The UI remained on
-  `Stop response`. Argon generation is **not verified**.
-- Chrome reports Gemini's `local-network-access` permission as `denied`.
-  An authenticated page WebSocket to the diagnostic bridge failed before
-  reaching the server. The live DOM checks used a test event sink, not a
-  working browser-to-bridge socket; these are not end-to-end T3 acceptance.
+## Reproduce
 
-Live testing found and fixed ignored model hints, a mode-picker SPA timing
-race, and previous-chat text being emitted as a new response. Updated workers
-advertise model-selection support; the bridge rejects targeted requests from
-older workers. Scraping excludes prior response nodes, waits for generation
-to finish, and gives Argon up to 120 seconds for its first response within a
-290-second overall scrape deadline. Eight Node regression tests cover those
-worker behaviors, in addition to the 90 passing Python tests.
+Run the local suites from the project root:
 
-The installed signed-in Chrome profiles did not have the bridge extension.
-Native Windows browser control was unavailable, and the shared browser cannot
-open `chrome://extensions` or site settings. Automatic extension installation
-was therefore not completed. No original browser settings or saved cookies
-were changed. A working extension connection and live Argon reply remain required.
+```powershell
+Push-Location vendor\gemini-web-api
+.\.venv\Scripts\python.exe -m pytest -q
+node --test tests/extension_model_test.cjs tests/extension_background_test.cjs
+Pop-Location
+.\vendor\gemini-web-api\.venv\Scripts\python.exe scripts/test-bridge-scripts.py
+```
 
-## Installed-extension reliability work
+For a live installed-extension check, start the bridge with the Chrome backend
+and run:
 
-After the extension was loaded, the real HTTP bridge detected a capable worker
-and Hydrogen returned `42` for `17 + 25`. A later randomized plain Hydrogen
-check passed. Complete live acceptance has **not** passed: streaming and the
-tool-result round trip failed, and Argon did not finish a successful API check.
-The worker subsequently disconnected. A connection or passing local tests is
-not a claim that either model works end to end.
+```powershell
+.\vendor\gemini-web-api\.venv\Scripts\python.exe scripts/smoke-extension.py --model all --mode full --require-background
+```
 
-Additional fixes now include a service-worker-owned WebSocket heartbeat,
-one-time reload delivery, content-script recovery after extension reloads,
-an active-connection probe instead of a stale DOM marker, and an authenticated
-command to open the fixed Gemini worker URL. Worker requests activate their
-tab/window. Response reading handles background Markdown with empty innerText,
-and fresh-chat setup waits for the old turn to clear and stops leftover
-generation before submitting another request.
-
-The repeatable HTTP suite is `scripts/smoke-extension.py`. Diagnostics are
-available at authenticated `/v1/extension/diagnostics`. Neither script prints
-credentials; the diagnostics return UI metadata rather than generated text.
-
-Local validation for this milestone: **96 Python tests, 24 Node worker tests,
-and 4 PowerShell black-box checks passed**. Live acceptance remains outstanding;
-the newer worker-opening recovery path is unit-tested but not yet live-verified.
+The live command is single-attempt per check, never prints credentials or
+generated text, and exits nonzero when a model fails.
