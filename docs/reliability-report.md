@@ -18,11 +18,13 @@ fulfilling your request.” response; the bridge surfaces that as an error rathe
 than silently falling back. A subsequent Hydrogen request returned the expected
 marker after the hidden bridge restart and inactive worker recovery. In the
 same check, Argon was selected and the worker timed out waiting for a new reply.
-Both model paths still need repeatable live passes.
+After another hidden restart, Hydrogen passed again. Argon rendered a new response,
+but it did not complete before the bridge deadline. Both model paths still need
+repeatable live passes.
 
 ## Local verification
 
-- 99 Python tests passed, including a loopback chat request that waits for
+- 100 Python tests passed, including a loopback chat request that waits for
   recovery and completes when a test extension connects.
 - 31 extension Node tests passed, including background-only tab creation,
   heartbeat/reload recovery, model selection, fresh-chat isolation, multiline
@@ -57,6 +59,8 @@ longevity, or end-to-end T3 desktop use.
   hidden tab can remain connected without foreground UI control.
 - A normal chat request in forced Chrome mode queues a missing worker. Calls
   share the recovery window and stop waiting after 85 seconds.
+- Stable response text is measured by elapsed time to account for slower hidden
+  tab timers. A timed-out chat does not send the prompt again.
 
 ## Live limitations
 
