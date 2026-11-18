@@ -9,18 +9,23 @@ worker without activating its tab or window, and recovery opens new worker tabs
 with `active: false`. The installed worker was live-verified after recovery;
 diagnostics showed it hidden and unfocused before and after requests.
 
-Live model reliability is still intermittent. A full Hydrogen run on 17
-November passed plain generation, SSE streaming, a required `get_status` tool
-call, and a fresh nonce tool-result round trip while the worker remained
-hidden. A fresh recheck on 18 November returned HTTP 502 for both Argon and
-Hydrogen. Argon has also returned Google's exact “I'm having a hard time
-fulfilling your request.” response; the bridge surfaces that as an error rather
-than silently falling back. A subsequent Hydrogen request returned the expected
-marker after the hidden bridge restart and inactive worker recovery. In the
-same check, Argon was selected and the worker timed out waiting for a new reply.
-After another hidden restart, Hydrogen passed again. Argon rendered a new response,
-but it did not complete before the bridge deadline. Both model paths still need
-repeatable live passes.
+On 18 November, both Argon and Hydrogen passed the live plain-generation check
+through `/v1/chat/completions` after the service worker timing fix. Each returned
+its exact fresh marker from a multiline prompt. Worker diagnostics were hidden
+and unfocused before and after the run. An earlier full Hydrogen run also
+passed SSE streaming, a required `get_status` tool call, and a tool result with
+a fresh nonce in the background.
+
+The subsequent full run on 18 November kept the worker hidden and unfocused.
+Argon reached the response deadline on the plain check, so its streaming and
+tool checks were skipped. Hydrogen passed plain generation and streaming. The
+required tool call was missing in that run, so there was no tool round trip.
+
+Earlier live checks failed intermittently. Argon returned Google's “I'm having
+a hard time fulfilling your request” message in one probe and did not finish
+before the bridge deadline in another. Both models also hit a fresh-chat error
+on a stale worker before their prompts were submitted. These failures remain
+relevant to repeatability.
 
 ## Local verification
 
@@ -32,8 +37,9 @@ repeatable live passes.
 - 4 PowerShell bridge black-box checks passed.
 - OpenAI error-envelope behavior was verified: upstream failures become client
   errors rather than successful assistant text.
-- The vendored bridge is pinned as a submodule to the patched private fork, and
-  its offline CI workflow is configured.
+- The vendored bridge is pinned to the patched private fork. The bridge's
+  [hosted regression run](https://github.com/Invictine/gemini-jio-argon-bridge/actions/runs/44321705150)
+  passed on the pinned commit.
 
 These tests do not prove live entitlement, quota, model identity, cookie
 longevity, or end-to-end T3 desktop use.
