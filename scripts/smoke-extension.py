@@ -116,8 +116,8 @@ def run_search(client: httpx.Client, base: str, headers: dict[str, str], model: 
         "web_search_options": {"require_citations": True},
         "messages": [{"role": "user", "content": (
             "Use Google Search to find the latest stable Python release on python.org. "
-            "Give its version and release date, include a clickable link to its release page, "
-            "and cite the primary source in Gemini Sources."
+            "Give its version and release date, and cite the primary source in Gemini Sources. "
+            "Include a clickable link to its release page and write the full HTTPS URL in the answer."
         )}],
     })
     check = f"{model}:native_search"
