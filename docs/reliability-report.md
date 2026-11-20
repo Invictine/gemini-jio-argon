@@ -20,6 +20,41 @@ T3 Code installation. Its Start menu shortcut points to the separate executable,
 and its isolated settings select Neon. The installed binary started its backend
 in a hidden smoke test and served the environment endpoint and bundled web app.
 
+## Installed-edition session-start failure (20 November)
+
+The installed Gemini edition initially failed every `startSession`. The server
+trace recorded `ProviderAdapterProcessError`: the bundled OpenCode exited with
+code 1 during startup after `ConfigInvalidError` at
+`C:\Users\aniru\.config\opencode\opencode.jsonc`, rejecting the keys
+`subagent_depth`, `tool_output`, and `attachment`. Those keys belong to the newer
+OpenCode 2.2.5 config used by the regular installation, not to the bundled
+OpenCode 1.14.19. No turn had completed through the installed app.
+
+The cause was ineffective config isolation in `GeminiDriver.ts`. It set
+`OPENCODE_CONFIG_CONTENT`, which OpenCode v1 **merges** with the global config,
+and a misspelled `OPENCODE_CONFIG_PROJECT_DISABLE` (the real flag is
+`OPENCODE_DISABLE_PROJECT_CONFIG`, and it only disables project-local config).
+The spawned server therefore still loaded and validated the regular config. A
+second collision came from the shared `~/.local/share/opencode/opencode.db`,
+whose newer schema broke v1's first-run migration.
+
+The installed app was repaired without a rebuild by adding an `environment`
+array to `providerInstances.gemini` in
+`%USERPROFILE%\.t3-gemini\userdata\settings.json`. It sets `XDG_CONFIG_HOME`,
+`XDG_DATA_HOME`, and `XDG_STATE_HOME` to Gemini-owned directories and the correct
+`OPENCODE_DISABLE_PROJECT_CONFIG=1` flag. Provider-instance variables reach the
+spawned process, and settings changes hot-reload. The same isolation was patched
+into `GeminiDriver.ts` in the `feat/gemini-native-provider` fork so future builds
+are correct by default.
+
+After the fix, a one-shot bundled-OpenCode run started cleanly, completed its own
+database migration, and reached the bridge. A stale worker first reported
+“Gemini mode picker was not found”; opening a fresh worker with
+`POST /v1/extension/open-worker` resolved it. A subsequent live turn through
+bridge → Chrome extension → Gemini returned the exact fresh marker with HTTP
+200, and diagnostics showed stage `complete`, model `Neon`, worker hidden and
+unfocused. This was the first completed turn through the installed path.
+
 ## Earlier model checks
 
 On 20 November, the signed-in picker showed `4 Hydrogen` and `4 Neon`, with no
