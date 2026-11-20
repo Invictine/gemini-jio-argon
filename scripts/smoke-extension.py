@@ -71,6 +71,8 @@ def http_failure(response: httpx.Response) -> str:
         return "http_error"
     if detail.startswith("Gemini could not fulfill this request with the selected model"):
         return "model_request_failed"
+    if detail.startswith(("Gemini mode option", "Gemini mode picker was not found")):
+        return "model_picker_unavailable"
     if detail.startswith("no eligible gemini tab") or (
         detail.startswith("gemini tab ") and detail.endswith(" disconnected")
     ):

@@ -4,6 +4,17 @@ This report separates code-level reliability from live Google model behavior.
 
 ## Current result
 
+On 20 November, the signed-in picker showed `4 Hydrogen` and `4 Neon`, with no
+`4 Argon` option. A live Hydrogen plain prompt through the background bridge
+returned its exact marker. Argon requests fail at model selection and include
+the options the picker exposed. The bridge does not substitute Neon for Argon.
+Hydrogen also passed the required `get_status` call and consumed its returned
+nonce in a follow-up. The standalone streaming check failed in the same run.
+
+Windows Task Scheduler started the Chrome bridge after the previous process was
+stopped. Its hidden per-user task runs at sign-in and exited successfully after
+checking the new listener. The unpacked extension reconnected independently.
+
 The extension now operates in the background. Requests use the existing Gemini
 worker without activating its tab or window, and recovery opens new worker tabs
 with `active: false`. The installed worker was live-verified after recovery;
@@ -29,16 +40,16 @@ relevant to repeatability.
 
 ## Local verification
 
-- 100 Python tests passed, including a loopback chat request that waits for
+- 102 Python tests passed, including a loopback chat request that waits for
   recovery and completes when a test extension connects.
-- 32 extension Node tests passed, including background-only tab creation,
+- 33 extension Node tests passed, including background-only tab creation,
   heartbeat/reload recovery, model selection, fresh-chat isolation, multiline
   prompt insertion, hidden Markdown/code extraction, and tool-result handling.
 - 4 PowerShell bridge black-box checks passed.
 - OpenAI error-envelope behavior was verified: upstream failures become client
   errors rather than successful assistant text.
 - The vendored bridge is pinned to the patched private fork. The bridge's
-  [hosted regression run](https://github.com/Invictine/gemini-jio-argon-bridge/actions/runs/44321705150)
+  [hosted regression run](https://github.com/Invictine/gemini-jio-argon-bridge/actions/runs/44727480034)
   passed on the pinned commit.
 
 These tests do not prove live entitlement, quota, model identity, cookie

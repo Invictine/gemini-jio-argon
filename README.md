@@ -14,7 +14,7 @@ T3 Code fork (branch feat/gemini-native-provider, native "Gemini" provider)
               -> signed-in Gemini tab (Chrome backend) or saved session (cookie backend)
 ```
 
-For the signed-in Chrome route, load the unpacked `vendor/gemini-web-api/extension` in the Chrome profile that offers Argon and Hydrogen, set `GEMINI_BACKEND=chrome` in the project `.env`, and start the bridge in the background. The extension uses an inactive Gemini tab. The [installed-extension check](#testing-the-installed-chrome-extension) can open that tab for you and verify generation through the local API.
+For the signed-in Chrome route, load the unpacked `vendor/gemini-web-api/extension` in the signed-in Chrome profile, set `GEMINI_BACKEND=chrome` in the project `.env`, and start the bridge in the background. The extension uses an inactive Gemini tab. The [installed-extension check](#testing-the-installed-chrome-extension) can open that tab for you and verify generation through the local API. A request for Argon or Hydrogen requires that exact model in the account's Gemini picker.
 
 The T3 Code fork's `feat/gemini-native-provider` branch adds **Gemini** under Settings → Providers. Its Sign in dialog verifies saved cookies for the cookie backend. That setup is documented below. The [validation report](docs/reliability-report.md) tracks live Chrome and T3 results separately.
 
@@ -29,12 +29,24 @@ The T3 Code fork's `feat/gemini-native-provider` branch adds **Gemini** under Se
 
 - **Python 3.12 + uv** — already installed and synced at `vendor\gemini-web-api\.venv`.
 - **T3 Code fork** with the native Gemini provider: the `feat/gemini-native-provider` branch, built and run locally (step 1). Its own README covers installing `vp` and `vp i`; building needs Node.js 22.16+/23.11+/24.10+.
-- **Native OpenCode executable** — the provider launches the native CLI with a forced config. The default path is pinned in the driver; override it with the **OpenCode executable** field in the Gemini provider settings.
+- **Native OpenCode 1.x executable** — the provider launches it with a local Gemini config. Set **OpenCode executable** in the provider settings to override discovery. OpenCode 1.14.19 was tested with this fork.
 - **Chrome**, logged into <https://gemini.google.com> with an account whose model picker actually offers **Gemini 4 Argon / Hydrogen**. Entitlement matters — an unentitled account receives an explicit model-unavailable error.
 
 ## Setup
 
-### 1. Build and run the T3 Code fork (native provider)
+### 1. Install T3 Code (Gemini) on Windows
+
+The Gemini edition installs alongside regular T3 Code with its own app identity and settings. Build its Windows installer from the T3 fork:
+
+```powershell
+git checkout feat/gemini-native-provider
+vp i
+vp run dist:desktop:win:gemini
+```
+
+Run the resulting installer and open **T3 Code (Gemini)** from the Start menu. The native provider expects a compatible OpenCode 1.x executable. This edition checks its per-user install location under `%LOCALAPPDATA%\T3 Code (Gemini)\runtime\opencode` before falling back to the executable configured for the provider.
+
+#### Run from source instead
 
 The **Gemini** provider is native to a T3 Code fork, not to a stock release. From your T3 Code checkout:
 
@@ -55,9 +67,11 @@ Keep that T3 build running — it is the app you will configure below. The fork'
 
 `check-bridge.ps1` should print **Bridge reachable: YES** and list `gemini-4-argon` and `gemini-4-hydrogen`. Background launch returns after the health endpoint is ready and leaves no visible terminal. Omit `-Background` to run it in the terminal for debugging. Model advertisement alone does not verify generation.
 
+To launch the bridge automatically at Windows sign-in, run `.\scripts\install-bridge-startup.ps1`. It registers a hidden task for your Windows account. Chrome still needs the enabled extension and a signed-in Gemini session.
+
 ### 3. Add the Gemini provider and sign in
 
-In the fork: **Settings → Providers → Add provider → Gemini** (it appears as a native provider, no ACP registration needed). If no Gemini instance exists yet, add one and enable it. Then use **Settings → Providers → Gemini → Sign in** and paste the two cookies.
+In the fork: **Settings → Providers → Add provider → Gemini**. In Chrome mode, the native provider checks the bridge and the extension worker. Sign in through Chrome. The cookie sign-in dialog below is for the separate cookie backend.
 
 > [!WARNING]
 > This is **unofficial, reverse-engineered** access to the Gemini web app. It may **violate Google's Terms of Service** and can lead to **account restrictions or termination**. Use a **secondary / throwaway Google account** if at all possible. See "Read this first" above.
@@ -72,7 +86,7 @@ On a successful verification the bridge also reports, from the account's model r
 
 Cookie values are never returned in a response, echoed in an error, or written to logs. Credentials are also rejected if they are empty, over 4096 characters, or contain line breaks, NUL, or `=`.
 
-> `.env` holds **session cookies = full account credentials**. Never commit, share, or paste it into a chat. It is gitignored. The auth endpoint uses the same `GEMINI_API_KEY` as `/v1/models`; CORS is restricted to loopback HTTP origins on the bridge port plus T3's `t3code://app` / `t3code-dev://app` webview origins (never `null` or arbitrary websites). The `/ws` extension socket additionally requires that key or a trusted local/T3/extension origin. Override the credentials file location with `GEMINI_ENV_FILE` if you relocate it.
+> `.env` holds **session cookies = full account credentials**. Never commit, share, or paste it into a chat. It is gitignored. The auth endpoint uses the same `GEMINI_API_KEY` as `/v1/models`; CORS is restricted to loopback HTTP origins on the bridge port plus T3's `t3code://app`, `t3code-dev://app`, and `t3code-gemini://app` webview origins. The `/ws` extension socket also requires that key or a trusted local/T3/extension origin. Override the credentials file location with `GEMINI_ENV_FILE` if you relocate it.
 
 ### 4. Pick the model
 
@@ -113,7 +127,7 @@ These env overrides are set **per provider instance** in T3's UI. If that env fi
 | 403 / login page in bridge log | Cookies expired or DBSC — re-capture fresh values from Chrome (see cookie guide). |
 | Models fall back to `gemini-3-flash` | Account not entitled, or alias resolution failed — check the bridge log and re-apply the `config.py` patch. |
 | Tool-call parse failures | Emulated calling is best-effort, but failures are no longer silent: the bridge returns a structured `__gemini_tool_error__` tool call (and rejects tool names not supplied in the request) so the agent loop can react. Retry, or use a simpler prompt. |
-| Model missing from picker | Add custom model slug `gemini-app/argon` / `gemini-app/hydrogen`. |
+| Model missing from Gemini's picker | Check which exact models Google offers on the signed-in account. The bridge will show the visible options and refuse to substitute a different model. |
 | Port already in use | Change `GEMINI_API_PORT` in `.env` **and** the `baseURL` in both `config\opencode-gemini*.json*`. |
 
 ## Limitations
