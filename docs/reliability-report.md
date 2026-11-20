@@ -15,6 +15,11 @@ OpenCode 1.14.19 also completed a live Neon file-read round trip. The `read`
 tool opened a temporary file, and Neon's final answer contained the exact
 random marker stored in it.
 
+Installed **T3 Code (Gemini) 0.0.38-gemini.1** on Windows alongside the existing
+T3 Code installation. Its Start menu shortcut points to the separate executable,
+and its isolated settings select Neon. The installed binary started its backend
+in a hidden smoke test and served the environment endpoint and bundled web app.
+
 ## Earlier model checks
 
 On 20 November, the signed-in picker showed `4 Hydrogen` and `4 Neon`, with no
@@ -61,8 +66,7 @@ relevant to repeatability.
 - 4 PowerShell bridge black-box checks passed.
 - OpenAI error-envelope behavior was verified: upstream failures become client
   errors rather than successful assistant text.
-- The vendored bridge is pinned to the patched private fork with hosted Python
-  and Node regression checks.
+- The pinned bridge passed its [hosted Python and Node checks](https://github.com/Invictine/gemini-jio-argon-bridge/actions/runs/44729066042).
 
 These tests do not prove live entitlement, quota, model identity, cookie
 longevity, or end-to-end T3 desktop use.
