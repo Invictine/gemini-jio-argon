@@ -2,7 +2,19 @@
 
 # gemini-jio-argon
 
-Run **Gemini 4 Neon** from the Gemini web app as a local provider in T3 Code. The bridge reuses your signed-in Chrome session and exposes an OpenAI-compatible API.
+**gemini-jio-argon** connects OpenCode to a local OpenAI-compatible bridge driven by a Chrome extension that sends requests through an inactive tab in your signed-in Gemini web app. It pairs with a Windows T3 Code fork that adds a native Gemini provider alongside your standard T3 Code installation, defaulting to **Gemini 4 Neon** where your account supports it.
+
+[Windows T3 Code fork](https://github.com/Invictine/t3code/tree/feat/gemini-native-provider) · [Setup](#setup) · [Reliability checks](docs/reliability-report.md)
+
+## Live OpenCode terminal demo
+
+[![Live Neon run in OpenCode showing the read tool and the returned file marker](assets/demo/neon-file-read.png)](assets/demo/neon-file-read.mp4?raw=true)
+
+[Watch the short MP4](assets/demo/neon-file-read.mp4?raw=true). The condensed clip follows a live OpenCode run as it reads a scratch file and returns its contents through the local bridge.
+
+## Compatibility and access
+
+This project is unofficial. Gemini account quotas, model availability, and web UI updates can interrupt requests. The docs and T3 Code fork are public. Setup requires access to the private, pinned bridge dependency while its upstream licensing is unresolved.
 
 ## Architecture
 
@@ -27,8 +39,8 @@ The T3 Code fork's `feat/gemini-native-provider` branch adds **Gemini** under Se
 
 ## Prerequisites
 
-- **Python 3.12 + uv** — already installed and synced at `vendor\gemini-web-api\.venv`.
-- **T3 Code fork** with the native Gemini provider: the `feat/gemini-native-provider` branch, built and run locally (step 1). Its own README covers installing `vp` and `vp i`; building needs Node.js 22.16+/23.11+/24.10+.
+- **Python 3.12 and uv** for the local bridge.
+- **Windows** and the [T3 Code fork](https://github.com/Invictine/t3code/tree/feat/gemini-native-provider) on `feat/gemini-native-provider`. Follow the fork's toolchain instructions for Node.js and `vp`.
 - **Native OpenCode 1.x executable** — the provider launches it with a local Gemini config. Set **OpenCode executable** in the provider settings to override discovery. OpenCode 1.14.19 was tested with this fork.
 - **Chrome**, logged into <https://gemini.google.com> with an account whose model picker offers **4 Neon**.
 
@@ -36,10 +48,11 @@ The T3 Code fork's `feat/gemini-native-provider` branch adds **Gemini** under Se
 
 ### 1. Install T3 Code (Gemini) on Windows
 
-The Gemini edition installs alongside regular T3 Code with its own app identity and settings. Build its Windows installer from the T3 fork:
+The Gemini edition installs alongside regular T3 Code with its own app identity and settings. To build the Windows installer, use the toolchain from the fork's README and run the following.
 
 ```powershell
-git checkout feat/gemini-native-provider
+git clone --branch feat/gemini-native-provider https://github.com/Invictine/t3code.git
+cd t3code
 vp i
 vp run dist:desktop:win:gemini
 ```
@@ -52,7 +65,7 @@ npm install --prefix "$env:LOCALAPPDATA\T3 Code (Gemini)\runtime\opencode" --no-
 
 #### Run from source instead
 
-The **Gemini** provider is native to a T3 Code fork, not to a stock release. From your T3 Code checkout:
+From your T3 Code fork checkout, switch to the Gemini branch and start the desktop development build.
 
 ```powershell
 git checkout feat/gemini-native-provider
@@ -62,7 +75,20 @@ npm run dev:desktop        # or: npm run build:desktop && npm run start:desktop
 
 Keep that T3 build running — it is the app you will configure below. The fork's README has the full toolchain setup (Node.js version, `vp`, etc.).
 
-### 2. Start and verify the bridge
+### 2. Set up the signed-in Chrome bridge
+
+With access to the pinned dependency, clone this project and install the bridge.
+
+```powershell
+git clone --recurse-submodules https://github.com/Invictine/gemini-jio-argon.git
+cd gemini-jio-argon
+uv sync --locked --project vendor/gemini-web-api
+Copy-Item .env.example .env
+```
+
+Set `GEMINI_BACKEND=chrome` in `.env`. In the Chrome profile where you are signed in to Gemini, open `chrome://extensions`, turn on **Developer mode**, and use **Load unpacked** to select `vendor/gemini-web-api/extension`. Keep Chrome running.
+
+Start the bridge and check that it responds.
 
 ```powershell
 .\scripts\start-bridge.ps1 -Background # hidden process, logs in bridge-detached*.log
@@ -75,7 +101,7 @@ To launch the bridge automatically at Windows sign-in, run `.\scripts\install-br
 
 ### 3. Add the Gemini provider and sign in
 
-In the fork: **Settings → Providers → Add provider → Gemini**. In Chrome mode, the native provider checks the bridge and the extension worker. Sign in through Chrome. The cookie sign-in dialog below is for the separate cookie backend.
+In the fork: **Settings → Providers → Add provider → Gemini**. In Chrome mode, the native provider checks the bridge and the extension worker. Sign in through Chrome. The separate [cookie backend](docs/cookie-capture.md) uses the sign-in dialog below.
 
 > [!WARNING]
 > This is **unofficial, reverse-engineered** access to the Gemini web app. It may **violate Google's Terms of Service** and can lead to **account restrictions or termination**. Use a **secondary / throwaway Google account** if at all possible. See "Read this first" above.
@@ -95,27 +121,6 @@ Cookie values are never returned in a response, echoed in an error, or written t
 ### 4. Pick the model
 
 Select provider **Gemini**. Its model is **Gemini 4 Neon** (`gemini-app/neon`).
-
-### Fallback: register as a Local ACP command (legacy)
-
-If you cannot run the fork, the original stock-T3 path still works: register the OpenCode CLI as a Local ACP command that speaks the Agent Client Protocol, with the same forced Gemini-only config.
-
-**Settings → Providers → Add provider → Show more → Local ACP command**
-
-| Field | Value |
-| --- | --- |
-| Executable | `C:\Users\aniru\AppData\Local\hermes\node\node_modules\@opencode\cli\bin\opencode.exe` |
-| Argument row | `acp` |
-| Display name | `Gemini` |
-| Env `OPENCODE_CONFIG_CONTENT` | exact one-line contents of `config\opencode-gemini.min.json` |
-| Env `OPENCODE_CONFIG_PROJECT_DISABLE` | `1` |
-
-These env overrides are set **per provider instance** in T3's UI. If that env field is unavailable, paste the content of `config\opencode-gemini.jsonc` into the provider's config field directly. With this path there is no native Sign in dialog, so put the cookies in `.env` yourself (see `docs/cookie-capture.md`) and restart the bridge after editing it by hand:
-
-1. Copy `.env.example` → `.env` in this folder.
-2. In Chrome, open <https://gemini.google.com>, press **F12 → Application → Storage → Cookies → https://gemini.google.com**.
-3. Find `__Secure-1PSID` and `__Secure-1PSIDTS`; double-click each **Value** and copy it.
-4. Set `GEMINI_1PSID=<value>` and `GEMINI_1PSIDTS=<value>` in `.env`, then restart the bridge.
 
 ## Verification checklist
 
@@ -171,9 +176,8 @@ These env overrides are set **per provider instance** in T3's UI. If that env fi
 
 ## Reliability checks
 
-Clone with `git clone --recurse-submodules` (both repositories are private). In an
-existing checkout, run `git submodule update --init --recursive`. The vendored
-bridge is pinned to the patched fork; do not replace it with unpatched upstream.
+With access to the pinned dependency, run `git submodule update --init --recursive`
+in an existing checkout. The tests expect the pinned revision.
 
 ```powershell
 uv sync --locked --group dev --project vendor/gemini-web-api

@@ -25,7 +25,7 @@ in a hidden smoke test and served the environment endpoint and bundled web app.
 The installed Gemini edition initially failed every `startSession`. The server
 trace recorded `ProviderAdapterProcessError`: the bundled OpenCode exited with
 code 1 during startup after `ConfigInvalidError` at
-`C:\Users\aniru\.config\opencode\opencode.jsonc`, rejecting the keys
+`%USERPROFILE%\.config\opencode\opencode.jsonc`, rejecting the keys
 `subagent_depth`, `tool_output`, and `attachment`. Those keys belong to the newer
 OpenCode 2.2.5 config used by the regular installation, not to the bundled
 OpenCode 1.14.19. No turn had completed through the installed app.
@@ -101,7 +101,7 @@ relevant to repeatability.
 - 4 PowerShell bridge black-box checks passed.
 - OpenAI error-envelope behavior was verified: upstream failures become client
   errors rather than successful assistant text.
-- The pinned bridge passed its [hosted Python and Node checks](https://github.com/Invictine/gemini-jio-argon-bridge/actions/runs/44729066042).
+- The pinned bridge passed its hosted Python and Node checks.
 
 These tests do not prove live entitlement, quota, model identity, cookie
 longevity, or end-to-end T3 desktop use.
