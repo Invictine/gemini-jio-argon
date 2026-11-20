@@ -15,6 +15,7 @@ import secrets
 import sys
 import time
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -71,6 +72,8 @@ def http_failure(response: httpx.Response) -> str:
         return "http_error"
     if detail.startswith("Gemini could not fulfill this request with the selected model"):
         return "model_request_failed"
+    if detail.startswith("Gemini did not expose usable citation links"):
+        return "native_sources_missing"
     if detail.startswith(("Gemini mode option", "Gemini mode picker was not found")):
         return "model_picker_unavailable"
     if detail.startswith("no eligible gemini tab") or (
@@ -104,6 +107,40 @@ def run_plain(client: httpx.Client, base: str, headers: dict[str, str], model: s
     emit(f"{model}:plain", passed, status=response.status_code,
          error=None if passed else "fresh_marker_missing",
          detail=f"exact_format={answer == expected}")
+    return passed
+
+
+def run_search(client: httpx.Client, base: str, headers: dict[str, str], model: str) -> bool:
+    response = client.post(f"{base}/v1/chat/completions", headers=headers, json={
+        "model": model,
+        "web_search_options": {"require_citations": True},
+        "messages": [{"role": "user", "content": (
+            "Use Google Search to find the latest stable Python release on python.org. "
+            "Give its version and release date, include a clickable link to its release page, "
+            "and cite the primary source in Gemini Sources."
+        )}],
+    })
+    check = f"{model}:native_search"
+    if response.status_code != 200:
+        emit(check, False, status=response.status_code, error=http_failure(response))
+        return False
+    try:
+        sections = choice_content(response).split("\n\n")
+        source_lines = [
+            line for section in sections
+            if section.startswith(("**Sources from Gemini**\n", "**Answer links from sites cited by Gemini**\n"))
+            for line in section.splitlines()[1:]
+        ]
+        official_link = any(
+            urlsplit(line.split("](<", 1)[1][:-2]).hostname in {"python.org", "www.python.org"}
+            for line in source_lines if "](<" in line and line.endswith(">)")
+        )
+    except (ValueError, KeyError, IndexError, TypeError):
+        emit(check, False, status=response.status_code, error="invalid_response")
+        return False
+    passed = official_link
+    emit(check, passed, status=response.status_code,
+         error=None if passed else "official_native_source_missing")
     return passed
 
 
@@ -286,6 +323,9 @@ def run(models: list[str], mode: str, open_worker: bool = False, require_backgro
         failures = 0
         for model in models:
             model_id = f"gemini-4-{model}"
+            if mode == "search":
+                failures += not run_search(client, base, headers, model_id)
+                continue
             checks = [run_plain(client, base, headers, model_id)]
             if mode == "full" and checks[0]:
                 checks.append(run_stream(client, base, headers, model_id))
@@ -300,7 +340,7 @@ def run(models: list[str], mode: str, open_worker: bool = False, require_backgro
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model", choices=("neon", "argon", "hydrogen", "all"), default="neon")
-    parser.add_argument("--mode", choices=("plain", "full"), default="full")
+    parser.add_argument("--mode", choices=("plain", "full", "search"), default="full")
     parser.add_argument("--open-worker", action="store_true", help="Ask the installed extension to open a dedicated Gemini tab; wait up to 90 seconds")
     parser.add_argument("--require-background", action="store_true", help="Require a hidden, unfocused Gemini tab before and after live checks")
     args = parser.parse_args()

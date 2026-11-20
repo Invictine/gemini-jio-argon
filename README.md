@@ -122,6 +122,20 @@ Cookie values are never returned in a response, echoed in an error, or written t
 
 Select provider **Gemini**. Its model is **Gemini 4 Neon** (`gemini-app/neon`).
 
+### Use Gemini's website tools
+
+With the Chrome backend, ask Gemini to search the public web for current information. Gemini can use its own Google Search, and the bridge carries clickable links into the T3 reply. **Sources from Gemini** lists links exposed by the site's citation UI. **Answer links from sites cited by Gemini** lists answer links whose host matches a citation chip. **Links in Gemini’s answer** lists the remaining links from the answer body.
+
+To make dedicated search, image, and video tools available to the installed Gemini edition, run:
+
+```powershell
+.\scripts\install-opencode-tools.ps1
+```
+
+Restart **T3 Code (Gemini)** if it was running. Its isolated OpenCode runtime discovers `gemini_app_search`, `gemini_app_generate_image`, `gemini_app_start_video`, and `gemini_app_video_status`. Ask for a web search with sources, an image, or a video. The video tool returns a job ID that can be checked for a download link. Google account access and quotas apply to media generation.
+
+API clients can pass `"web_search_options": {}` in a text chat completion to request website Search. If Gemini omits usable citation links, the bridge includes that status with the answer. Set `"web_search_options": {"require_citations": true}` to require links backed by native citation evidence. Website Search requires a Chrome worker. Image and video are also available through their dedicated API endpoints.
+
 ## Verification checklist
 
 - [ ] `.\scripts\check-bridge.ps1` shows the bridge reachable and `gemini-4-neon` listed.
@@ -213,6 +227,7 @@ With `GEMINI_BACKEND=chrome` and the bridge running:
 
 ```powershell
 .\vendor\gemini-web-api\.venv\Scripts\python.exe scripts/smoke-extension.py --model neon --mode full --require-background
+.\vendor\gemini-web-api\.venv\Scripts\python.exe scripts/smoke-extension.py --model neon --mode search --require-background
 ```
 
 This tests the running HTTP bridge, including fresh response markers, streaming,
