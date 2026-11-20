@@ -13,7 +13,7 @@ from threading import Thread
 ROOT = Path(__file__).resolve().parents[1]
 CHECK_SCRIPT = ROOT / "scripts" / "check-bridge.ps1"
 API_KEY = "test-key-do-not-print"
-REQUIRED_MODELS = ["gemini-4-argon", "gemini-4-hydrogen"]
+REQUIRED_MODELS = ["gemini-4-neon"]
 
 
 class StubHandler(BaseHTTPRequestHandler):
@@ -106,10 +106,10 @@ class CheckBridgeScriptTests(unittest.TestCase):
             server.server_close()
             thread.join(timeout=2)
         self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("gemini-4-hydrogen", result.stdout + result.stderr)
+        self.assertIn("gemini-4-neon", result.stdout + result.stderr)
         self.assert_key_not_leaked(result)
 
-    def test_both_required_models_succeed(self) -> None:
+    def test_required_neon_model_succeeds(self) -> None:
         server, thread = self.serve()
         try:
             result = self.run_check(server.server_address[1])
@@ -118,7 +118,7 @@ class CheckBridgeScriptTests(unittest.TestCase):
             server.server_close()
             thread.join(timeout=2)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("OK: argon and hydrogen are both advertised.", result.stdout)
+        self.assertIn("OK: gemini-4-neon is advertised.", result.stdout)
         self.assert_key_not_leaked(result)
 
 

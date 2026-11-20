@@ -299,12 +299,12 @@ def run(models: list[str], mode: str, open_worker: bool = False, require_backgro
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--model", choices=("argon", "hydrogen", "all"), default="all")
+    parser.add_argument("--model", choices=("neon", "argon", "hydrogen", "all"), default="neon")
     parser.add_argument("--mode", choices=("plain", "full"), default="full")
     parser.add_argument("--open-worker", action="store_true", help="Ask the installed extension to open a dedicated Gemini tab; wait up to 90 seconds")
     parser.add_argument("--require-background", action="store_true", help="Require a hidden, unfocused Gemini tab before and after live checks")
     args = parser.parse_args()
-    models = [args.model] if args.model != "all" else ["argon", "hydrogen"]
+    models = [args.model] if args.model != "all" else ["neon", "argon", "hydrogen"]
     try:
         return run(models, args.mode, args.open_worker, args.require_background)
     except httpx.HTTPError as exc:

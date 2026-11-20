@@ -2,7 +2,7 @@
 
 # gemini-jio-argon
 
-Run Google Gemini 4 **Argon** / **Hydrogen** (the models from the gemini.google.com web app) as a local provider in T3 Code — no paid API key. A small local bridge reuses your Chrome web session and exposes it as an OpenAI-compatible API.
+Run **Gemini 4 Neon** from the Gemini web app as a local provider in T3 Code. The bridge reuses your signed-in Chrome session and exposes an OpenAI-compatible API.
 
 ## Architecture
 
@@ -14,7 +14,7 @@ T3 Code fork (branch feat/gemini-native-provider, native "Gemini" provider)
               -> signed-in Gemini tab (Chrome backend) or saved session (cookie backend)
 ```
 
-For the signed-in Chrome route, load the unpacked `vendor/gemini-web-api/extension` in the signed-in Chrome profile, set `GEMINI_BACKEND=chrome` in the project `.env`, and start the bridge in the background. The extension uses an inactive Gemini tab. The [installed-extension check](#testing-the-installed-chrome-extension) can open that tab for you and verify generation through the local API. A request for Argon or Hydrogen requires that exact model in the account's Gemini picker.
+Load the unpacked `vendor/gemini-web-api/extension` in the signed-in Chrome profile, set `GEMINI_BACKEND=chrome` in the project `.env`, and start the bridge in the background. The extension uses an inactive Gemini tab and selects the exact model. The [installed-extension check](#testing-the-installed-chrome-extension) can open that tab for you and verify Neon through the local API.
 
 The T3 Code fork's `feat/gemini-native-provider` branch adds **Gemini** under Settings → Providers. Its Sign in dialog verifies saved cookies for the cookie backend. That setup is documented below. The [validation report](docs/reliability-report.md) tracks live Chrome and T3 results separately.
 
@@ -30,7 +30,7 @@ The T3 Code fork's `feat/gemini-native-provider` branch adds **Gemini** under Se
 - **Python 3.12 + uv** — already installed and synced at `vendor\gemini-web-api\.venv`.
 - **T3 Code fork** with the native Gemini provider: the `feat/gemini-native-provider` branch, built and run locally (step 1). Its own README covers installing `vp` and `vp i`; building needs Node.js 22.16+/23.11+/24.10+.
 - **Native OpenCode 1.x executable** — the provider launches it with a local Gemini config. Set **OpenCode executable** in the provider settings to override discovery. OpenCode 1.14.19 was tested with this fork.
-- **Chrome**, logged into <https://gemini.google.com> with an account whose model picker actually offers **Gemini 4 Argon / Hydrogen**. Entitlement matters — an unentitled account receives an explicit model-unavailable error.
+- **Chrome**, logged into <https://gemini.google.com> with an account whose model picker offers **4 Neon**.
 
 ## Setup
 
@@ -44,7 +44,11 @@ vp i
 vp run dist:desktop:win:gemini
 ```
 
-Run the resulting installer and open **T3 Code (Gemini)** from the Start menu. The native provider expects a compatible OpenCode 1.x executable. This edition checks its per-user install location under `%LOCALAPPDATA%\T3 Code (Gemini)\runtime\opencode` before falling back to the executable configured for the provider.
+Run the resulting installer and open **T3 Code (Gemini)** from the Start menu. The native provider expects a compatible OpenCode 1.x executable. Install the tested version into the per-user runtime location, or set a compatible executable in the Gemini provider settings:
+
+```powershell
+npm install --prefix "$env:LOCALAPPDATA\T3 Code (Gemini)\runtime\opencode" --no-audit --no-fund opencode-ai@1.14.19
+```
 
 #### Run from source instead
 
@@ -65,7 +69,7 @@ Keep that T3 build running — it is the app you will configure below. The fork'
 .\scripts\check-bridge.ps1      # second terminal: health + model list
 ```
 
-`check-bridge.ps1` should print **Bridge reachable: YES** and list `gemini-4-argon` and `gemini-4-hydrogen`. Background launch returns after the health endpoint is ready and leaves no visible terminal. Omit `-Background` to run it in the terminal for debugging. Model advertisement alone does not verify generation.
+`check-bridge.ps1` should print **Bridge reachable: YES** and list `gemini-4-neon`. Background launch returns after the health endpoint is ready and leaves no visible terminal. Omit `-Background` to run it in the terminal for debugging. Model advertisement alone does not verify generation.
 
 To launch the bridge automatically at Windows sign-in, run `.\scripts\install-bridge-startup.ps1`. It registers a hidden task for your Windows account. Chrome still needs the enabled extension and a signed-in Gemini session.
 
@@ -82,7 +86,7 @@ The dialog POSTs to `POST http://127.0.0.1:<port>/v1/auth/session` with `Authori
 - **Rejected (401/502):** nothing is saved locally and the current working sign-in is untouched; the dialog shows the bridge's error.
 - **Bridge unreachable:** the cookies are saved into T3's provider settings but are explicitly marked **unverified**; start the bridge and use **Apply saved cookies** (shown next to *Update cookies*) to confirm them without re-pasting. Until then the provider shows as unauthenticated. A rejection on retry keeps the saved cookies and reports the error — it never silently overwrites a working sign-in.
 
-On a successful verification the bridge also reports, from the account's model registry discovered at init, whether **Argon** and **Hydrogen** are actually available to that Google account. T3 shows this as an advisory note in the sign-in result; the provider still lists both models statically (accounts that omit either model receive an explicit model-unavailable error).
+On a successful cookie verification, the bridge reports whether the account's registry contains **Neon**. T3 shows this as an advisory note in the sign-in result. A successful cookie verification alone does not establish Neon access.
 
 Cookie values are never returned in a response, echoed in an error, or written to logs. Credentials are also rejected if they are empty, over 4096 characters, or contain line breaks, NUL, or `=`.
 
@@ -90,7 +94,7 @@ Cookie values are never returned in a response, echoed in an error, or written t
 
 ### 4. Pick the model
 
-Select provider **Gemini**, then model **Gemini 4 Argon** or **Gemini 4 Hydrogen** in T3's model picker. If they do not appear, use **Add custom model** with slug `gemini-app/argon` or `gemini-app/hydrogen`.
+Select provider **Gemini**. Its model is **Gemini 4 Neon** (`gemini-app/neon`).
 
 ### Fallback: register as a Local ACP command (legacy)
 
@@ -115,8 +119,8 @@ These env overrides are set **per provider instance** in T3's UI. If that env fi
 
 ## Verification checklist
 
-- [ ] `.\scripts\check-bridge.ps1` shows the bridge reachable and both model IDs.
-- [ ] **Sign in → Verify & save** succeeds and the provider shows as authenticated/ready (not "unverified").
+- [ ] `.\scripts\check-bridge.ps1` shows the bridge reachable and `gemini-4-neon` listed.
+- [ ] T3 shows Gemini ready with the signed-in Chrome worker connected.
 - [ ] A test prompt in T3 returns a Gemini answer (watch the bridge terminal for the request).
 - [ ] Tool use works — OpenCode emulates tool calling over the bridge; try a harmless command like listing a directory.
 
@@ -150,9 +154,12 @@ These env overrides are set **per provider instance** in T3's UI. If that env fi
   "gemini-4-argon": "gemini-4-argon",
   "hydrogen": "gemini-4-hydrogen",
   "gemini-4-hydrogen": "gemini-4-hydrogen",
+  "neon": "gemini-4-neon",
+  "gemini-4-neon": "gemini-4-neon",
   # after _CANON (keeps _HAS_THINKING logic intact)
   _CANON.update({"gemini-4-argon": "gemini-4-argon",
-                 "gemini-4-hydrogen": "gemini-4-hydrogen"})
+                 "gemini-4-hydrogen": "gemini-4-hydrogen",
+                 "gemini-4-neon": "gemini-4-neon"})
   ```
   Without it, unknown names collapse to `DEFAULT_MODEL` = `gemini-3-flash`.
 - **Re-apply the runtime session patch after every upstream update.** It is a second local patch on the vendored bridge (committed in `vendor\gemini-web-api`):
@@ -201,7 +208,7 @@ remaining live acceptance requirements.
 With `GEMINI_BACKEND=chrome` and the bridge running:
 
 ```powershell
-.\vendor\gemini-web-api\.venv\Scripts\python.exe scripts/smoke-extension.py --model all --mode full --require-background
+.\vendor\gemini-web-api\.venv\Scripts\python.exe scripts/smoke-extension.py --model neon --mode full --require-background
 ```
 
 This tests the running HTTP bridge, including fresh response markers, streaming,

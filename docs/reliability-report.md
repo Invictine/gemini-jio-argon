@@ -4,6 +4,19 @@ This report separates code-level reliability from live Google model behavior.
 
 ## Current result
 
+The Windows Gemini edition offers **Gemini 4 Neon** (`gemini-app/neon`). On 20
+November, Neon passed live plain generation, streaming, the required
+`get_status` tool call, and the tool-result nonce round trip. The streaming
+reply contained its fresh marker with additional formatting. Chrome reported
+the worker hidden and unfocused before and after the run.
+
+The bridge selects the `4 Neon` option by its exact picker label.
+OpenCode 1.14.19 also completed a live Neon file-read round trip. The `read`
+tool opened a temporary file, and Neon's final answer contained the exact
+random marker stored in it.
+
+## Earlier model checks
+
 On 20 November, the signed-in picker showed `4 Hydrogen` and `4 Neon`, with no
 `4 Argon` option. A live Hydrogen plain prompt through the background bridge
 returned its exact marker. Argon requests fail at model selection and include
@@ -42,22 +55,21 @@ relevant to repeatability.
 
 - 102 Python tests passed, including a loopback chat request that waits for
   recovery and completes when a test extension connects.
-- 33 extension Node tests passed, including background-only tab creation,
+- 34 extension Node tests passed, including background-only tab creation,
   heartbeat/reload recovery, model selection, fresh-chat isolation, multiline
   prompt insertion, hidden Markdown/code extraction, and tool-result handling.
 - 4 PowerShell bridge black-box checks passed.
 - OpenAI error-envelope behavior was verified: upstream failures become client
   errors rather than successful assistant text.
-- The vendored bridge is pinned to the patched private fork. The bridge's
-  [hosted regression run](https://github.com/Invictine/gemini-jio-argon-bridge/actions/runs/44727480034)
-  passed on the pinned commit.
+- The vendored bridge is pinned to the patched private fork with hosted Python
+  and Node regression checks.
 
 These tests do not prove live entitlement, quota, model identity, cookie
 longevity, or end-to-end T3 desktop use.
 
 ## Important fixes
 
-- Argon/Hydrogen requests fail explicitly when unavailable; the account default
+- Neon, Argon, and Hydrogen requests fail explicitly when unavailable. The account default
   is never presented under the requested model name.
 - Initialization has a bounded retry path with failed-client cleanup and
   protection against an old request resetting a newer client.
@@ -81,15 +93,13 @@ longevity, or end-to-end T3 desktop use.
 
 ## Live limitations
 
-The saved two-cookie session initializes as unauthenticated and discovers only
-`gemini-flash-lite`; the signed-in Chrome account's picker offers both `4 Argon`
-and `4 Hydrogen`. This is why the current Chrome backend is used for live
-checks, rather than treating the cookie-only backend as proof of access.
+The saved two-cookie session was previously unauthenticated and discovered only
+`gemini-flash-lite`. Current live checks use the signed-in Chrome session.
 
-The native OpenCode CLI directory-list acceptance fixture timed out after 240
-seconds and was terminated without an orphan process. T3 desktop sign-in and
-tool execution remain unverified. Long-duration endurance, browser
-restart/minimize recovery, and quota/rate-limit behavior are also unverified.
+The previous OpenCode runtime was incompatible with T3's native server API.
+The Windows edition uses a dedicated OpenCode 1.14.19 installation. Its native
+server completed a read tool round trip against a synthetic provider. Long-duration
+endurance and quota behavior remain unverified.
 
 ## Reproduce
 
@@ -107,7 +117,7 @@ For a live installed-extension check, start the bridge with the Chrome backend
 and run:
 
 ```powershell
-.\vendor\gemini-web-api\.venv\Scripts\python.exe scripts/smoke-extension.py --model all --mode full --require-background
+.\vendor\gemini-web-api\.venv\Scripts\python.exe scripts/smoke-extension.py --model neon --mode full --require-background
 ```
 
 The live command is single-attempt per check, never prints credentials or
