@@ -221,6 +221,12 @@ write with fabricated or empty content.
 See [the validation report](docs/reliability-report.md) for tested behavior and
 remaining live acceptance requirements.
 
+### Conversation continuity in Chrome
+
+Follow-ups in a T3 Gemini thread continue in the same Gemini web chat. The bridge uses OpenCode's `X-Session-Affinity` header to keep threads separate and sends new turns and tool results when the supplied history extends the saved conversation. The mapping survives bridge and worker restarts. If the client edits or compacts its history, or Gemini can no longer open the saved chat, the bridge rebuilds context from the supplied transcript in a new chat.
+
+Other OpenAI-compatible clients can opt in with a unique `X-Gemini-Conversation-Id` header per conversation. Keep sending the full `messages` history so the bridge can validate each follow-up. A request without a conversation identifier starts a fresh chat. To activate this feature on an existing installation, restart the local bridge and reload its Chrome extension after updating both.
+
 ### Testing the installed Chrome extension
 
 With `GEMINI_BACKEND=chrome` and the bridge running:
