@@ -1,8 +1,8 @@
 <img src="assets/icon.svg" width="64" height="64" alt="">
 
-# gemini-jio-argon
+# Neon Bridge
 
-**gemini-jio-argon** connects OpenCode to a local OpenAI-compatible bridge driven by a Chrome extension that sends requests through an inactive tab in your signed-in Gemini web app. It pairs with a Windows T3 Code fork that adds a native Gemini provider alongside your standard T3 Code installation, defaulting to **Gemini 4 Neon** where your account supports it.
+**Neon Bridge** connects OpenCode to a local OpenAI-compatible bridge driven by a Chrome extension that sends requests through an inactive tab in your signed-in Gemini web app. It pairs with a Windows T3 Code fork that adds a native Gemini provider alongside your standard T3 Code installation, defaulting to **Gemini 4 Neon** where your account supports it.
 
 [Windows T3 Code fork](https://github.com/Invictine/t3code/tree/feat/gemini-native-provider) · [Setup](#setup) · [Reliability checks](docs/reliability-report.md)
 
@@ -80,8 +80,8 @@ Keep that T3 build running — it is the app you will configure below. The fork'
 With access to the pinned dependency, clone this project and install the bridge.
 
 ```powershell
-git clone --recurse-submodules https://github.com/Invictine/gemini-jio-argon.git
-cd gemini-jio-argon
+git clone --recurse-submodules https://github.com/Invictine/gemini-neon-bridge.git
+cd gemini-neon-bridge
 uv sync --locked --project vendor/gemini-web-api
 Copy-Item .env.example .env
 ```
